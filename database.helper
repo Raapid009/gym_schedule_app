@@ -1,0 +1,208 @@
+// lib/database/database_helper.dart
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart';
+import '../models/user_model.dart';
+import '../models/workout_model.dart';
+import '../utils/app_constants.dart';
+
+/// DatabaseHelper menggunakan pola Singleton.
+/// Artinya hanya ada SATU instance DatabaseHelper di seluruh aplikasi.
+/// Ini penting agar koneksi database tidak terbuka berkali-kali.
+class DatabaseHelper {
+  // Instance tunggal (Singleton)
+  static final DatabaseHelper _instance = DatabaseHelper._internal();
+  static Database? _database;
+
+  // Factory constructor — selalu mengembalikan instance yang sama
+  factory DatabaseHelper() => _instance;
+
+  // Constructor private, hanya bisa dipanggil dari dalam kelas ini
+  DatabaseHelper._internal();
+
+  /// Getter untuk mendapatkan database.
+  /// Jika belum ada, akan dibuat terlebih dahulu.
+  Future<Database> get database async {
+    if (_database != null) return _database!;
+    _database = await _initDatabase();
+    return _database!;
+  }
+
+  /// Inisialisasi database — menentukan lokasi dan nama file .db
+  Future<Database> _initDatabase() async {
+    // Dapatkan path direktori dokumen perangkat
+    final dbPath = await getDatabasesPath();
+
+    // Gabungkan path dengan nama database
+    final path = join(dbPath, AppConstants.dbName);
+
+    // Buka atau buat database baru
+    return await openDatabase(
+      path,
+      version: AppConstants.dbVersion,
+      onCreate: _onCreate, // Dipanggil saat database pertama kali dibuat
+    );
+  }
+
+  /// Membuat tabel-tabel saat database pertama kali dibuat
+  Future<void> _onCreate(Database db, int version) async {
+    // Buat tabel users
+    await db.execute('''
+      CREATE TABLE ${AppConstants.tableUser} (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        nama     TEXT    NOT NULL,
+        username TEXT    NOT NULL UNIQUE,
+        password TEXT    NOT NULL
+      )
+    ''');
+
+    // Buat tabel workouts
+    await db.execute('''
+      CREATE TABLE ${AppConstants.tableWorkout} (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        exerciseName TEXT NOT NULL,
+        category     TEXT NOT NULL,
+        date         TEXT NOT NULL,
+        time         TEXT NOT NULL,
+        duration     TEXT NOT NULL,
+        difficulty   TEXT NOT NULL,
+        status       TEXT NOT NULL
+      )
+    ''');
+  }
+
+  // ─────────────────────────────────────────────
+  // OPERASI DATABASE — USER
+  // ─────────────────────────────────────────────
+
+  /// Menyimpan user baru ke database.
+  /// Mengembalikan id user yang baru dibuat, atau -1 jika gagal.
+  Future<int> insertUser(UserModel user) async {
+    final db = await database;
+    try {
+      return await db.insert(
+        AppConstants.tableUser,
+        user.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.abort, // Gagal jika username sama
+      );
+    } catch (e) {
+      return -1; // Username sudah digunakan
+    }
+  }
+
+  /// Mengecek apakah username dan password cocok (untuk login).
+  /// Mengembalikan objek UserModel jika berhasil, null jika gagal.
+  Future<UserModel?> loginUser(String username, String password) async {
+    final db = await database;
+    final result = await db.query(
+      AppConstants.tableUser,
+      where: 'username = ? AND password = ?',
+      whereArgs: [username, password],
+    );
+
+    if (result.isNotEmpty) {
+      return UserModel.fromMap(result.first);
+    }
+    return null; // Login gagal
+  }
+
+  /// Mengambil data user berdasarkan username.
+  Future<UserModel?> getUserByUsername(String username) async {
+    final db = await database;
+    final result = await db.query(
+      AppConstants.tableUser,
+      where: 'username = ?',
+      whereArgs: [username],
+    );
+
+    if (result.isNotEmpty) {
+      return UserModel.fromMap(result.first);
+    }
+    return null;
+  }
+
+  // ─────────────────────────────────────────────
+  // OPERASI DATABASE — WORKOUT
+  // ─────────────────────────────────────────────
+
+  /// Menyimpan jadwal latihan baru ke database.
+  /// Mengembalikan id workout yang baru dibuat.
+  Future<int> insertWorkout(WorkoutModel workout) async {
+    final db = await database;
+    return await db.insert(AppConstants.tableWorkout, workout.toMap());
+  }
+
+  /// Mengambil semua jadwal latihan, diurutkan dari terbaru.
+  Future<List<WorkoutModel>> getAllWorkouts() async {
+    final db = await database;
+    final result = await db.query(
+      AppConstants.tableWorkout,
+      orderBy: 'date DESC, time DESC',
+    );
+
+    // Ubah setiap Map menjadi WorkoutModel
+    return result.map((map) => WorkoutModel.fromMap(map)).toList();
+  }
+
+  /// Mengambil satu jadwal latihan berdasarkan id.
+  Future<WorkoutModel?> getWorkoutById(int id) async {
+    final db = await database;
+    final result = await db.query(
+      AppConstants.tableWorkout,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    if (result.isNotEmpty) {
+      return WorkoutModel.fromMap(result.first);
+    }
+    return null;
+  }
+
+  /// Memperbarui data jadwal latihan yang sudah ada.
+  /// Mengembalikan jumlah baris yang berhasil diupdate.
+  Future<int> updateWorkout(WorkoutModel workout) async {
+    final db = await database;
+    return await db.update(
+      AppConstants.tableWorkout,
+      workout.toMap(),
+      where: 'id = ?',
+      whereArgs: [workout.id],
+    );
+  }
+
+  /// Menghapus jadwal latihan berdasarkan id.
+  /// Mengembalikan jumlah baris yang berhasil dihapus.
+  Future<int> deleteWorkout(int id) async {
+    final db = await database;
+    return await db.delete(
+      AppConstants.tableWorkout,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Menghitung jumlah workout berdasarkan status.
+  Future<int> countWorkoutByStatus(String status) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as total FROM ${AppConstants.tableWorkout} WHERE status = ?',
+      [status],
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  /// Menghitung total semua workout.
+  Future<int> countAllWorkouts() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as total FROM ${AppConstants.tableWorkout}',
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  /// Menutup koneksi database (opsional, biasanya tidak perlu dipanggil manual)
+  Future<void> closeDatabase() async {
+    final db = await database;
+    db.close();
+  }
+}

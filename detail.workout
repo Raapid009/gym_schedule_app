@@ -1,0 +1,612 @@
+// lib/screens/workout/detail_workout_screen.dart
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../../models/workout_model.dart';
+import '../../services/workout_service.dart';
+import '../../utils/app_colors.dart';
+import '../../utils/app_constants.dart';
+import 'edit_workout_screen.dart';
+
+/// Halaman Detail Jadwal Latihan.
+/// Menampilkan seluruh informasi workout beserta tombol aksi.
+class DetailWorkoutScreen extends StatefulWidget {
+  final int workoutId;
+
+  const DetailWorkoutScreen({super.key, required this.workoutId});
+
+  @override
+  State<DetailWorkoutScreen> createState() => _DetailWorkoutScreenState();
+}
+
+class _DetailWorkoutScreenState extends State<DetailWorkoutScreen> {
+  final WorkoutService _workoutService = WorkoutService();
+
+  WorkoutModel? _workout;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWorkout();
+  }
+
+  /// Memuat data workout berdasarkan id
+  Future<void> _loadWorkout() async {
+    setState(() => _isLoading = true);
+    final data = await _workoutService.getWorkoutById(widget.workoutId);
+    setState(() {
+      _workout = data;
+      _isLoading = false;
+    });
+  }
+
+  /// Menentukan warna berdasarkan kategori
+  Color _getCategoryColor(String category) {
+    switch (category) {
+      case 'Chest':
+        return const Color(0xFFE53935);
+      case 'Back':
+        return const Color(0xFF8E24AA);
+      case 'Shoulder':
+        return const Color(0xFF1E88E5);
+      case 'Biceps':
+        return const Color(0xFF00ACC1);
+      case 'Triceps':
+        return const Color(0xFF43A047);
+      case 'Legs':
+        return const Color(0xFFFB8C00);
+      case 'Cardio':
+        return const Color(0xFFE91E63);
+      case 'Full Body':
+        return const Color(0xFF6D4C41);
+      default:
+        return AppColors.primary;
+    }
+  }
+
+  /// Menentukan ikon berdasarkan kategori
+  IconData _getCategoryIcon(String category) {
+    switch (category) {
+      case 'Chest':
+        return Icons.self_improvement;
+      case 'Back':
+        return Icons.accessibility_new;
+      case 'Shoulder':
+        return Icons.sports_gymnastics;
+      case 'Biceps':
+      case 'Triceps':
+        return Icons.fitness_center;
+      case 'Legs':
+        return Icons.directions_run;
+      case 'Cardio':
+        return Icons.monitor_heart_outlined;
+      case 'Full Body':
+        return Icons.sports_martial_arts;
+      default:
+        return Icons.fitness_center;
+    }
+  }
+
+  /// Format tanggal menjadi lebih mudah dibaca
+  /// Contoh: 2024-01-15 → Senin, 15 Januari 2024
+  String _formatDate(String dateStr) {
+    try {
+      final date = DateFormat('yyyy-MM-dd').parse(dateStr);
+      return DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(date);
+    } catch (_) {
+      return dateStr;
+    }
+  }
+
+  /// Dialog konfirmasi hapus workout
+  Future<void> _showDeleteDialog() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Hapus Latihan?',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Apakah kamu yakin ingin menghapus "${_workout?.exerciseName}"?\n\nData yang dihapus tidak bisa dikembalikan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Batal',
+              style: TextStyle(color: AppColors.textGrey),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              minimumSize: const Size(80, 40),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      final success = await _workoutService.deleteWorkout(widget.workoutId);
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Latihan berhasil dihapus'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        // Kembali ke list dan beri sinyal refresh
+        Navigator.pop(context, true);
+      }
+    }
+  }
+
+  /// Dialog konfirmasi tandai selesai
+  Future<void> _showMarkDoneDialog() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Tandai Selesai?',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: const Text('Apakah latihan ini sudah selesai dilakukan?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Belum',
+              style: TextStyle(color: AppColors.textGrey),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+              minimumSize: const Size(80, 40),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Selesai'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && _workout != null && mounted) {
+      final success = await _workoutService.markAsDone(_workout!);
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Latihan ditandai selesai! 💪'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        // Reload data untuk update tampilan status
+        _loadWorkout();
+      }
+    }
+  }
+
+  /// Navigasi ke halaman edit
+  Future<void> _goToEdit() async {
+    if (_workout == null) return;
+
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => EditWorkoutScreen(workout: _workout!)),
+    );
+
+    // Jika ada perubahan, reload data
+    if (updated == true) {
+      _loadWorkout();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
+          : _workout == null
+          ? _buildNotFound()
+          : _buildContent(),
+    );
+  }
+
+  /// Tampilan saat data tidak ditemukan
+  Widget _buildNotFound() {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Detail Latihan')),
+      body: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 64, color: AppColors.textGrey),
+            SizedBox(height: 16),
+            Text(
+              'Data latihan tidak ditemukan',
+              style: TextStyle(color: AppColors.textGrey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Tampilan utama detail workout
+  Widget _buildContent() {
+    final workout = _workout!;
+    final isDone = workout.status == AppConstants.statusDone;
+    final categoryColor = _getCategoryColor(workout.category);
+
+    return CustomScrollView(
+      slivers: [
+        // ── SliverAppBar dengan header berwarna ──
+        SliverAppBar(
+          expandedHeight: 220,
+          pinned: true,
+          backgroundColor: categoryColor,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, color: AppColors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+          // Tombol aksi di AppBar
+          actions: [
+            // Tombol edit
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, color: AppColors.white),
+              tooltip: 'Edit',
+              onPressed: _goToEdit,
+            ),
+            // Tombol hapus
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: AppColors.white),
+              tooltip: 'Hapus',
+              onPressed: _showDeleteDialog,
+            ),
+          ],
+          flexibleSpace: FlexibleSpaceBar(
+            background: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [categoryColor, categoryColor.withOpacity(0.7)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Ikon kategori besar
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: AppColors.white.withOpacity(0.25),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(
+                          _getCategoryIcon(workout.category),
+                          color: AppColors.white,
+                          size: 32,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Nama latihan
+                      Text(
+                        workout.exerciseName,
+                        style: const TextStyle(
+                          color: AppColors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+
+                      // Badge kategori dan status
+                      Row(
+                        children: [
+                          // Badge kategori
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.white.withOpacity(0.25),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              workout.category,
+                              style: const TextStyle(
+                                color: AppColors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Badge status
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isDone
+                                  ? AppColors.success.withOpacity(0.85)
+                                  : AppColors.warning.withOpacity(0.85),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isDone ? Icons.check_circle : Icons.pending,
+                                  color: AppColors.white,
+                                  size: 12,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  workout.status,
+                                  style: const TextStyle(
+                                    color: AppColors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            title: Text(
+              workout.exerciseName,
+              style: const TextStyle(
+                color: AppColors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
+          ),
+        ),
+
+        // ── Konten detail ──
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Card informasi jadwal ──
+                _buildSectionTitle('Informasi Jadwal'),
+                const SizedBox(height: 12),
+                _buildInfoCard([
+                  _buildInfoRow(
+                    icon: Icons.calendar_today,
+                    label: 'Tanggal',
+                    value: _formatDate(workout.date),
+                    color: AppColors.primary,
+                  ),
+                  _buildDivider(),
+                  _buildInfoRow(
+                    icon: Icons.access_time,
+                    label: 'Jam Mulai',
+                    value: workout.time,
+                    color: AppColors.primaryLighter,
+                  ),
+                  _buildDivider(),
+                  _buildInfoRow(
+                    icon: Icons.timer_outlined,
+                    label: 'Durasi',
+                    value: '${workout.duration} menit',
+                    color: AppColors.warning,
+                  ),
+                ]),
+
+                const SizedBox(height: 20),
+
+                // ── Card detail latihan ──
+                _buildSectionTitle('Detail Latihan'),
+                const SizedBox(height: 12),
+                _buildInfoCard([
+                  _buildInfoRow(
+                    icon: Icons.category_outlined,
+                    label: 'Kategori',
+                    value: workout.category,
+                    color: categoryColor,
+                  ),
+                  _buildDivider(),
+                  _buildInfoRow(
+                    icon: Icons.signal_cellular_alt,
+                    label: 'Tingkat Kesulitan',
+                    value: workout.difficulty,
+                    color: _getDifficultyColor(workout.difficulty),
+                  ),
+                  _buildDivider(),
+                  _buildInfoRow(
+                    icon: isDone ? Icons.check_circle : Icons.pending,
+                    label: 'Status',
+                    value: workout.status,
+                    color: isDone ? AppColors.success : AppColors.warning,
+                  ),
+                ]),
+
+                const SizedBox(height: 28),
+
+                // ── Tombol Aksi ──
+                _buildSectionTitle('Aksi'),
+                const SizedBox(height: 12),
+
+                // Tombol Tandai Selesai (hanya muncul jika belum selesai)
+                if (!isDone) ...[
+                  ElevatedButton.icon(
+                    onPressed: _showMarkDoneDialog,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.success,
+                    ),
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Tandai Selesai'),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // Tombol Edit
+                ElevatedButton.icon(
+                  onPressed: _goToEdit,
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Edit Jadwal'),
+                ),
+                const SizedBox(height: 12),
+
+                // Tombol Hapus
+                ElevatedButton.icon(
+                  onPressed: _showDeleteDialog,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.error,
+                  ),
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Hapus Jadwal'),
+                ),
+
+                const SizedBox(height: 30),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Judul section
+  Widget _buildSectionTitle(String title) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 18,
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textDark,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Card putih pembungkus baris informasi
+  Widget _buildInfoCard(List<Widget> children) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(children: children),
+    );
+  }
+
+  /// Satu baris informasi di dalam card
+  Widget _buildInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          // Ikon dengan background warna
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 14),
+
+          // Label
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, color: AppColors.textGrey),
+            ),
+          ),
+
+          // Nilai
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Garis pemisah antar baris informasi
+  Widget _buildDivider() {
+    return const Divider(height: 1, indent: 66, color: AppColors.divider);
+  }
+
+  /// Warna berdasarkan tingkat kesulitan
+  Color _getDifficultyColor(String difficulty) {
+    switch (difficulty) {
+      case 'Pemula':
+        return AppColors.success;
+      case 'Menengah':
+        return AppColors.warning;
+      case 'Mahir':
+        return AppColors.error;
+      default:
+        return AppColors.textGrey;
+    }
+  }
+}

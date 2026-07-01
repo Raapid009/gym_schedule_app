@@ -1,0 +1,330 @@
+import 'package:flutter/material.dart';
+import '../../services/workout_service.dart';
+import '../../utils/app_colors.dart';
+import '../../utils/app_constants.dart';
+import '../../utils/session_manager.dart';
+import '../../widgets/stat_card.dart';
+import '../../widgets/menu_card.dart';
+import '../workout/workout_list_screen.dart';
+import '../workout/add_workout_screen.dart';
+import '../profile/profile_screen.dart';
+
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  final WorkoutService _workoutService = WorkoutService();
+
+  int _totalWorkout = 0;
+  int _doneWorkout = 0;
+  int _pendingWorkout = 0;
+  bool _isLoading = true;
+
+  String get _userName => SessionManager.getUser()?.nama ?? 'User';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    setState(() => _isLoading = true);
+
+    final stats = await _workoutService.getWorkoutStats();
+
+    setState(() {
+      _totalWorkout = stats['total'] ?? 0;
+      _doneWorkout = stats['done'] ?? 0;
+      _pendingWorkout = stats['pending'] ?? 0;
+      _isLoading = false;
+    });
+  }
+
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Konfirmasi Logout',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: const Text('Apakah kamu yakin ingin keluar?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'Batal',
+              style: TextStyle(color: AppColors.textGrey),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              minimumSize: const Size(80, 40),
+            ),
+            onPressed: () {
+              SessionManager.clearSession();
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/login',
+                (route) => false,
+              );
+            },
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: RefreshIndicator(
+        onRefresh: _loadStats,
+        color: AppColors.primary,
+        child: CustomScrollView(
+          slivers: [
+            _buildSliverAppBar(),
+
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Statistik Latihan',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    _isLoading
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(20),
+                              child: CircularProgressIndicator(
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          )
+                        : _buildStatsRow(),
+
+                    const SizedBox(height: 28),
+
+                    const Text(
+                      'Menu Utama',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    _buildMenuGrid(),
+
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSliverAppBar() {
+    return SliverAppBar(
+      expandedHeight: 180,
+      floating: false,
+      pinned: true,
+      backgroundColor: AppColors.primary,
+      automaticallyImplyLeading: false,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.logout, color: AppColors.white),
+          tooltip: 'Logout',
+          onPressed: _showLogoutDialog,
+        ),
+      ],
+      flexibleSpace: FlexibleSpaceBar(
+        background: Container(
+          decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: AppColors.white.withOpacity(0.25),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.person,
+                          color: AppColors.white,
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Halo, 👋',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            _userName,
+                            style: const TextStyle(
+                              color: AppColors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Semangat latihan hari ini! 💪',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        title: const Text(
+          ' ',
+          style: TextStyle(color: AppColors.white, fontSize: 18),
+        ),
+        titlePadding: const EdgeInsets.only(left: 16, bottom: 16),
+      ),
+    );
+  }
+
+  Widget _buildStatsRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: StatCard(
+            label: 'Total\nLatihan',
+            value: _totalWorkout,
+            icon: Icons.fitness_center,
+            color: AppColors.primary,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: StatCard(
+            label: 'Sudah\nSelesai',
+            value: _doneWorkout,
+            icon: Icons.check_circle_outline,
+            color: AppColors.success,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: StatCard(
+            label: 'Belum\nDilakukan',
+            value: _pendingWorkout,
+            icon: Icons.pending_outlined,
+            color: AppColors.warning,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMenuGrid() {
+    final menus = [
+      {
+        'label': 'Jadwal\nLatihan',
+        'icon': Icons.calendar_month_outlined,
+        'color': AppColors.primary,
+        'onTap': () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const WorkoutListScreen()),
+          );
+
+          _loadStats();
+        },
+      },
+      {
+        'label': 'Tambah\nJadwal',
+        'icon': Icons.add_circle_outline,
+        'color': AppColors.success,
+        'onTap': () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddWorkoutScreen()),
+          );
+          _loadStats();
+        },
+      },
+      {
+        'label': 'Profil\nSaya',
+        'icon': Icons.person_outline,
+        'color': AppColors.primaryLighter,
+        'onTap': () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ProfileScreen()),
+          );
+        },
+      },
+      {
+        'label': 'Keluar\nAplikasi',
+        'icon': Icons.logout_outlined,
+        'color': AppColors.error,
+        'onTap': _showLogoutDialog,
+      },
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: menus.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 1.2,
+      ),
+      itemBuilder: (context, index) {
+        final menu = menus[index];
+        return MenuCard(
+          label: menu['label'] as String,
+          icon: menu['icon'] as IconData,
+          color: menu['color'] as Color,
+          onTap: menu['onTap'] as VoidCallback,
+        );
+      },
+    );
+  }
+}
